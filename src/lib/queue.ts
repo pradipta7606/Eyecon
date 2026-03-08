@@ -76,6 +76,7 @@ export async function addTranscodeJob(data: {
   outputDir: string;
   thumbnailDir: string;
 }) {
+  if (!transcodeQueue) throw new Error('Queue is disabled');
   const job = await transcodeQueue.add('transcode-video', data, {
     jobId: `transcode-${data.videoId}`,
   });
@@ -85,6 +86,7 @@ export async function addTranscodeJob(data: {
 
 // ── Schedule cleanup job ──────────────────────────────────────────────
 export async function scheduleCleanup() {
+  if (!cleanupQueue) return;
   const intervalHours = parseInt(process.env.CLEANUP_INTERVAL_HOURS || '6', 10);
   await cleanupQueue.add(
     'cleanup-storage',
@@ -99,6 +101,7 @@ export async function scheduleCleanup() {
 
 // ── Get queue stats ────────────────────────────────────────────────────
 export async function getQueueStats() {
+  if (!transcodeQueue) return { waiting: 0, active: 0, completed: 0, failed: 0 };
   const [waiting, active, completed, failed] = await Promise.all([
     transcodeQueue.getWaitingCount(),
     transcodeQueue.getActiveCount(),
@@ -110,8 +113,8 @@ export async function getQueueStats() {
 
 // ── Graceful shutdown ──────────────────────────────────────────────────
 export async function closeQueues() {
-  await transcodeQueue.close();
-  await cleanupQueue.close();
+  if (transcodeQueue) await transcodeQueue.close();
+  if (cleanupQueue) await cleanupQueue.close();
   log.info('Queues closed');
 }
 

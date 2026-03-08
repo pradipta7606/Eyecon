@@ -68,6 +68,9 @@ const uploadLimiter = rateLimit({
 // ── Start Server ───────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
+  
+  // Enable CORS to allow the Vercel frontend to access this Render backend
+  app.use(cors());
 
   // Ensure storage bucket exists
   try {

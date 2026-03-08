@@ -241,6 +241,7 @@ async function startServer() {
   });
 
   // ── API: Ingest from URL ───────────────────────────────────────────
+  // ── API: Ingest from URL ───────────────────────────────────────────
   app.post('/api/ingest-url', uploadLimiter, async (req, res) => {
     const { url, title } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
@@ -248,32 +249,11 @@ async function startServer() {
     const videoId = uuidv4();
     const videoTitle = title || 'Remote Stream';
 
+    // Instead of queueing a transcode job, we just save the URL and mark it ready to play instantly.
     stmts.insertVideo.run(videoId, videoTitle, url, 'url', null);
+    stmts.completeVideo.run('Ready to play', null, videoId);
 
-    const outputDir = path.join(STREAMS_DIR, videoId);
-
-    try {
-      await addTranscodeJob({ videoId, inputPath: url, outputDir, thumbnailDir: THUMBNAILS_DIR });
-    } catch (err) {
-      log.warn({ err }, 'Queue unavailable, falling back to direct transcoding');
-      const { transcodeVideo } = await import('./src/lib/transcoder.js');
-      const { extractThumbnail } = await import('./src/lib/thumbnail.js');
-
-      stmts.updateStatus.run('processing', 'Direct processing (no queue)', 5, videoId);
-
-      transcodeVideo(videoId, url, outputDir, (percent, detail) => {
-        stmts.updateStatus.run('processing', detail, percent, videoId);
-      })
-        .then(async () => {
-          try { await extractThumbnail(videoId, url, THUMBNAILS_DIR); } catch {}
-          stmts.completeVideo.run('Transcoding complete', `/thumbnails/${videoId}.jpg`, videoId);
-        })
-        .catch((e) => {
-          stmts.failVideo.run(`Transcoding failed: ${e.message}`, videoId);
-        });
-    }
-
-    res.json({ id: videoId, status: 'pending' });
+    res.json({ id: videoId, status: 'completed' });
   });
 
   // ── API: Delete video ──────────────────────────────────────────────

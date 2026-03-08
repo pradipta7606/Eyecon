@@ -130,7 +130,9 @@ export const Player: React.FC<PlayerProps> = ({ src, title }) => {
     analytics.start();
     analytics.push('playback_start', { src });
 
-    if (Hls.isSupported()) {
+    const isM3U8 = src.toLowerCase().includes('.m3u8') || src.toLowerCase().includes('manifest');
+
+    if (isM3U8 && Hls.isSupported()) {
       hls = new Hls({
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
@@ -212,8 +214,13 @@ export const Player: React.FC<PlayerProps> = ({ src, title }) => {
           }
         }
       });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    } else if (isM3U8 && video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;
+      setIsLoading(false);
+    } else {
+      // Not an HLS stream, playback natively (e.g. MP4)
+      video.src = src;
+      setIsLoading(false);
     }
 
     return () => {

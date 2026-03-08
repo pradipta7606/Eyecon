@@ -143,7 +143,10 @@ export default function App() {
   };
 
   const getManifestPath = (video: VideoMetadata) => {
-    if (video.source_type === 'url') return video.filename;
+    // If it's a remote URL, the original URL was saved in the filename column
+    if (video.source_type === 'url' && video.filename) {
+      return video.filename;
+    }
     return `${API_BASE}/streams/${video.id}/master.m3u8`;
   };
 

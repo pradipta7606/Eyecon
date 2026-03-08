@@ -1,0 +1,5 @@
+{
+  "name": "Eyecon",
+  "description": "Advanced Real-Time Adaptive Video Streaming Platform with Multi-Bitrate Transcoding and MSE-based Adaptive Playback.",
+  "requestFramePermissions": []
+}

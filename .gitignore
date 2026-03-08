@@ -1,0 +1,15 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+uploads/
+streams/
+thumbnails/
+*.db
+*.db-wal
+*.db-shm
+tmp/

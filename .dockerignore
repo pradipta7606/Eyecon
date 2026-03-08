@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+.gitignore
+uploads
+streams
+thumbnails
+*.db
+*.db-wal
+*.db-shm
+*.log
+.env*
+!.env.example
+README.md
+.DS_Store
+tmp

@@ -147,6 +147,14 @@ export default function App() {
     if (video.source_type === 'url' && video.filename) {
       return video.filename;
     }
+    // For uploaded files: check if HLS streams exist, otherwise play raw upload
+    if (video.streams && video.streams.length > 0) {
+      return `${API_BASE}/streams/${video.id}/master.m3u8`;
+    }
+    // Fallback: serve the raw uploaded file directly
+    if (video.filename) {
+      return `${API_BASE}/uploads/${video.filename}`;
+    }
     return `${API_BASE}/streams/${video.id}/master.m3u8`;
   };
 

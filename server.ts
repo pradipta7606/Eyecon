@@ -94,12 +94,21 @@ async function startServer() {
     const start = Date.now();
     res.on('finish', () => {
       const duration = Date.now() - start;
-      if (!req.path.startsWith('/streams/') && !req.path.startsWith('/thumbnails/') && !req.path.includes('.')) {
+      if (!req.path.startsWith('/streams/') && !req.path.startsWith('/thumbnails/') && !req.path.startsWith('/uploads/') && !req.path.includes('.')) {
         log.info({ method: req.method, path: req.path, status: res.statusCode, duration }, 'request');
       }
     });
     next();
   });
+
+  // ── Serve static upload files (with CORS) ─────────────────────────
+  app.use('/uploads', express.static(UPLOADS_DIR, {
+    setHeaders: (res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Accept-Ranges', 'bytes');
+    }
+  }));
 
   // ── API: Health Check ──────────────────────────────────────────────
   app.get('/api/health', async (_req, res) => {
@@ -213,35 +222,41 @@ async function startServer() {
     const title = req.body.title || req.file.originalname;
     const fileSize = req.file.size;
 
+    // Save to DB and mark as completed immediately for instant direct playback
     stmts.insertVideo.run(videoId, title, req.file.filename, 'upload', fileSize);
+    stmts.completeVideo.run('Ready to play (direct)', null, videoId);
 
-    // Enqueue transcoding job
+    // Attempt HLS transcoding in the background as an upgrade
+    // If it succeeds, the player will switch to adaptive streaming
+    // If it fails (no FFmpeg), the raw upload still plays fine
     const inputPath = req.file.path;
     const outputDir = path.join(STREAMS_DIR, videoId);
 
-    try {
-      await addTranscodeJob({ videoId, inputPath, outputDir, thumbnailDir: THUMBNAILS_DIR });
-    } catch (err) {
-      // If Redis is not available, fall back to direct transcoding
-      log.warn({ err }, 'Queue unavailable, falling back to direct transcoding');
-      const { transcodeVideo } = await import('./src/lib/transcoder.js');
-      const { extractThumbnail } = await import('./src/lib/thumbnail.js');
+    (async () => {
+      try {
+        await addTranscodeJob({ videoId, inputPath, outputDir, thumbnailDir: THUMBNAILS_DIR });
+      } catch (err) {
+        log.warn({ err }, 'Queue unavailable, attempting direct transcoding');
+        try {
+          const { transcodeVideo } = await import('./src/lib/transcoder.js');
+          const { extractThumbnail } = await import('./src/lib/thumbnail.js');
 
-      stmts.updateStatus.run('processing', 'Direct processing (no queue)', 5, videoId);
+          stmts.updateStatus.run('processing', 'Transcoding for adaptive streaming...', 5, videoId);
 
-      transcodeVideo(videoId, inputPath, outputDir, (percent, detail) => {
-        stmts.updateStatus.run('processing', detail, percent, videoId);
-      })
-        .then(async () => {
+          await transcodeVideo(videoId, inputPath, outputDir, (percent, detail) => {
+            stmts.updateStatus.run('processing', detail, percent, videoId);
+          });
           try { await extractThumbnail(videoId, inputPath, THUMBNAILS_DIR); } catch {}
           stmts.completeVideo.run('Transcoding complete', `/thumbnails/${videoId}.jpg`, videoId);
-        })
-        .catch((e) => {
-          stmts.failVideo.run(`Transcoding failed: ${e.message}`, videoId);
-        });
-    }
+        } catch (e: any) {
+          // Transcoding failed (e.g. no FFmpeg), but the raw upload is still playable
+          log.warn({ err: e }, 'Transcoding failed, raw upload is still playable');
+          stmts.completeVideo.run('Ready to play (direct)', null, videoId);
+        }
+      }
+    })();
 
-    res.json({ id: videoId, status: 'pending' });
+    res.json({ id: videoId, status: 'completed' });
   });
 
   // ── API: Ingest from URL ───────────────────────────────────────────

@@ -143,9 +143,10 @@ export default function App() {
   };
 
   const getManifestPath = (video: VideoMetadata) => {
-    // If it's a remote URL, the original URL was saved in the filename column
-    if (video.source_type === 'url' && video.filename) {
-      return video.filename;
+    // Remote URLs: route through our proxy-stream endpoint
+    // This avoids CORS blocks and enables chunked streaming with seeking
+    if (video.source_type === 'url') {
+      return `${API_BASE}/api/proxy-stream/${video.id}`;
     }
     // For uploaded files: check if HLS streams exist, otherwise play raw upload
     if (video.streams && video.streams.length > 0) {

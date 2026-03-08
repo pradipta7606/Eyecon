@@ -275,6 +275,100 @@ async function startServer() {
     res.json({ id: videoId, status: 'completed' });
   });
 
+  // ── API: Proxy Stream (the core streaming engine) ─────────────────
+  // This endpoint is what makes "paste a link and watch instantly" work.
+  // The browser can't directly fetch random URLs due to CORS.
+  // Instead, our backend acts as a proxy: it fetches the remote video
+  // server-side and pipes the bytes chunk-by-chunk to the client.
+  // It also forwards Range headers so seeking/scrubbing works perfectly.
+  app.get('/api/proxy-stream/:id', async (req, res) => {
+    const video = stmts.getVideo.get(req.params.id) as VideoRecord | undefined;
+    if (!video) return res.status(404).json({ error: 'Video not found' });
+    if (video.source_type !== 'url') {
+      return res.status(400).json({ error: 'Not a remote stream' });
+    }
+
+    const remoteUrl = video.filename; // The original URL is stored in filename column
+    log.info({ videoId: video.id, url: remoteUrl }, 'Proxy streaming remote URL');
+
+    try {
+      // Build headers to forward to the remote server
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      };
+
+      // Forward Range header for seeking support
+      if (req.headers.range) {
+        headers['Range'] = req.headers.range;
+      }
+
+      // Fetch from the remote source
+      const response = await fetch(remoteUrl, {
+        headers,
+        redirect: 'follow',
+      });
+
+      if (!response.ok && response.status !== 206) {
+        log.warn({ status: response.status }, 'Remote server returned error');
+        return res.status(502).json({ error: `Remote server returned ${response.status}` });
+      }
+
+      // Set response status (200 for full, 206 for partial/range)
+      res.status(response.status);
+
+      // Forward critical headers from the remote server
+      const contentType = response.headers.get('content-type');
+      const contentLength = response.headers.get('content-length');
+      const contentRange = response.headers.get('content-range');
+      const acceptRanges = response.headers.get('accept-ranges');
+
+      if (contentType) res.setHeader('Content-Type', contentType);
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+      if (contentRange) res.setHeader('Content-Range', contentRange);
+      if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+      else res.setHeader('Accept-Ranges', 'bytes');
+
+      // CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', 'Range');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+
+      // Pipe the remote response body directly to the client
+      // This is the "chunked streaming" — data flows through our server
+      // in real time without buffering the entire file in memory
+      if (response.body) {
+        const reader = response.body.getReader();
+        const pump = async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              res.end();
+              return;
+            }
+            // Write the chunk to the client
+            const canContinue = res.write(Buffer.from(value));
+            if (!canContinue) {
+              // Backpressure: wait for the client to consume data
+              await new Promise<void>(resolve => res.once('drain', resolve));
+            }
+          }
+        };
+        pump().catch(err => {
+          log.warn({ err }, 'Proxy stream pipe error');
+          if (!res.headersSent) res.status(500).json({ error: 'Stream failed' });
+          else res.end();
+        });
+      } else {
+        res.end();
+      }
+    } catch (err) {
+      log.error({ err }, 'Proxy stream fetch error');
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Failed to connect to remote video source' });
+      }
+    }
+  });
+
   // ── API: Delete video ──────────────────────────────────────────────
   app.delete('/api/videos/:id', async (req, res) => {
     const video = stmts.getVideo.get(req.params.id) as VideoRecord | undefined;

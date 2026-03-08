@@ -37,8 +37,16 @@ export const transcodeQueue = new Queue('transcode', {
   },
 });
 
+transcodeQueue.on('error', (err: any) => {
+  if (err.code !== 'ECONNREFUSED') log.error({ err }, 'Transcode queue error');
+});
+
 export const cleanupQueue = new Queue('cleanup', {
   connection,
+});
+
+cleanupQueue.on('error', (err: any) => {
+  if (err.code !== 'ECONNREFUSED') log.error({ err }, 'Cleanup queue error');
 });
 
 // ── Dynamic concurrency ────────────────────────────────────────────────

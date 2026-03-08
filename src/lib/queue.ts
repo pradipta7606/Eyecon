@@ -1,4 +1,5 @@
 import { Queue, Worker, Job } from 'bullmq';
+import Redis from 'ioredis';
 import os from 'os';
 import { createChildLogger } from './logger.js';
 
@@ -7,24 +8,27 @@ const log = createChildLogger('queue');
 // ── Redis connection config ────────────────────────────────────────────
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
-function parseRedisUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    return {
-      host: parsed.hostname || 'localhost',
-      port: parseInt(parsed.port || '6379', 10),
-      password: parsed.password || undefined,
-    };
-  } catch {
-    return { host: 'localhost', port: 6379 };
+const connection = new Redis(REDIS_URL, {
+  maxRetriesPerRequest: null,
+  retryStrategy(times) {
+    if (times > 3) {
+      log.warn('Redis connection failed permanently. Queue features will be disabled.');
+      return null; // Stop retrying
+    }
+    return 1000; // wait 1s between retries
   }
-}
+});
 
-const redisConnection = parseRedisUrl(REDIS_URL);
+connection.on('error', (err: any) => {
+  // Suppress ECONNREFUSED spam if Redis is intentionaly not running
+  if (err.code !== 'ECONNREFUSED') {
+    log.error({ err }, 'Redis connection error');
+  }
+});
 
 // ── Queue Definitions ──────────────────────────────────────────────────
 export const transcodeQueue = new Queue('transcode', {
-  connection: redisConnection,
+  connection,
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 5000 },
@@ -34,7 +38,7 @@ export const transcodeQueue = new Queue('transcode', {
 });
 
 export const cleanupQueue = new Queue('cleanup', {
-  connection: redisConnection,
+  connection,
 });
 
 // ── Dynamic concurrency ────────────────────────────────────────────────
@@ -91,4 +95,4 @@ export async function closeQueues() {
   log.info('Queues closed');
 }
 
-export { redisConnection };
+export { connection as redisConnection };

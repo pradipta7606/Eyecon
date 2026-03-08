@@ -40,11 +40,12 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
   // ── URL validation ───────────────────────────────────────────────
   const validateUrl = (inputUrl: string): boolean => {
     if (!inputUrl) return false;
-    const validPattern = /\.(mp4|mov|webm|ogg|mkv|avi|m3u8|mpd|ts)(\?.*)?$/i;
-    const isStreaming = inputUrl.toLowerCase().includes('manifest') ||
-      inputUrl.toLowerCase().includes('playlist') ||
-      inputUrl.toLowerCase().includes('m3u8');
-    return validPattern.test(inputUrl) || isStreaming;
+    try {
+      const parsed = new URL(inputUrl);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
   };
 
   // ── Drag handlers ────────────────────────────────────────────────
@@ -138,7 +139,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
     if (!url) return;
 
     if (!validateUrl(url)) {
-      setError('Invalid format. Provide a direct link to MP4, WebM, HLS (.m3u8), or DASH (.mpd).');
+      setError('Invalid URL. Please provide a valid HTTP/HTTPS link to a video or stream.');
       return;
     }
 

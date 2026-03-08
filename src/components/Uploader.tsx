@@ -11,6 +11,8 @@ interface UploaderProps {
 
 type Tab = 'upload' | 'url';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
   const [activeTab, setActiveTab] = useState<Tab>('upload');
   const [url, setUrl] = useState('');
@@ -129,7 +131,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
       setUploading(false);
     });
 
-    xhr.open('POST', '/api/upload');
+    xhr.open('POST', `${API_BASE}/api/upload`);
     xhr.send(formData);
   };
 
@@ -145,7 +147,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
 
     setUploading(true);
     try {
-      const response = await fetch('/api/ingest-url', {
+      const response = await fetch(`${API_BASE}/api/ingest-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, title: title || 'Remote Stream' }),

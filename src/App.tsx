@@ -28,6 +28,7 @@ interface VideoMetadata {
   file_size?: number;
   thumbnail_path?: string;
   source_type?: string;
+  filename?: string;
   streams?: StreamInfo[];
   resolutions?: string[];
 }
@@ -37,6 +38,8 @@ interface Toast {
   type: 'success' | 'error' | 'info';
   message: string;
 }
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function App() {
   const [videos, setVideos] = useState<VideoMetadata[]>([]);
@@ -72,7 +75,7 @@ export default function App() {
   // ── Fetch videos ─────────────────────────────────────────────────
   const fetchVideos = async () => {
     try {
-      const response = await fetch('/api/videos');
+      const response = await fetch(`${API_BASE}/api/videos`);
       const data = await response.json();
       setVideos(data);
 
@@ -97,7 +100,7 @@ export default function App() {
   // ── Delete video ─────────────────────────────────────────────────
   const handleDelete = async (videoId: string) => {
     try {
-      const res = await fetch(`/api/videos/${videoId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/videos/${videoId}`, { method: 'DELETE' });
       if (res.ok) {
         if (selectedVideo?.id === videoId) setSelectedVideo(null);
         setDeleteConfirm(null);
@@ -140,7 +143,14 @@ export default function App() {
   };
 
   const getManifestPath = (video: VideoMetadata) => {
-    return `/streams/${video.id}/master.m3u8`;
+    if (video.source_type === 'url') return video.filename;
+    return `${API_BASE}/streams/${video.id}/master.m3u8`;
+  };
+
+  const getThumbnailUrl = (path: string | null) => {
+    if (!path) return undefined;
+    if (path.startsWith('http')) return path;
+    return `${API_BASE}${path}`;
   };
 
   return (
@@ -414,7 +424,7 @@ export default function App() {
                             {/* Thumbnail */}
                             <div className="w-20 h-12 rounded-lg bg-white/5 overflow-hidden flex-shrink-0">
                               {video.thumbnail_path ? (
-                                <img src={video.thumbnail_path} alt="" className="w-full h-full object-cover" />
+                                <img src={getThumbnailUrl(video.thumbnail_path)} alt="" className="w-full h-full object-cover" />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center">
                                   <Video size={16} className="text-white/10" />

@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 interface PlayerProps {
   src: string;
   title: string;
@@ -56,7 +58,7 @@ class AnalyticsBuffer {
     this.events = [];
 
     try {
-      await fetch('/api/analytics', {
+      await fetch(`${API_BASE}/api/analytics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

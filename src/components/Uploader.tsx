@@ -116,9 +116,9 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
       } else {
         try {
           const data = JSON.parse(xhr.responseText);
-          setError(data.error || 'Upload failed');
+          setError(data.error || `Upload failed (Status ${xhr.status})`);
         } catch {
-          setError('Upload failed. Please try again.');
+          setError(`Upload failed. Server returned status ${xhr.status}.`);
         }
         setUploading(false);
       }
@@ -156,11 +156,17 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
         setTitle('');
         onUploadComplete();
       } else {
-        const data = await response.json();
-        setError(data.error || 'Failed to ingest video.');
+        let errorMessage = `Failed to ingest video (Status ${response.status}).`;
+        try {
+          const data = await response.json();
+          if (data.error) errorMessage = data.error;
+        } catch {
+          // If response is not JSON (e.g., 404 HTML page or 502 Bad Gateway)
+        }
+        setError(errorMessage);
       }
-    } catch {
-      setError('Network error. Please check your connection.');
+    } catch (err: any) {
+      setError(`Network error: ${err.message || 'Please check your connection.'}`);
     } finally {
       setUploading(false);
     }

@@ -5,49 +5,61 @@ import { createChildLogger } from './logger.js';
 
 const log = createChildLogger('queue');
 
-// ── Redis connection config ────────────────────────────────────────────
+const isProduction = process.env.NODE_ENV === 'production';
+const hasExplicitRedis = !!process.env.REDIS_URL;
+
+// Disable the queue by default in production if no explicit Redis URL is provided,
+// or if manually disabled via QUEUE_ENABLED=false
+export const QUEUE_ENABLED = process.env.QUEUE_ENABLED === 'true' || 
+  (process.env.QUEUE_ENABLED !== 'false' && (!isProduction || hasExplicitRedis));
+
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
-const connection = new Redis(REDIS_URL, {
-  maxRetriesPerRequest: null,
-  retryStrategy(times) {
-    if (times > 3) {
-      log.warn('Redis connection failed permanently. Queue features will be disabled.');
-      return null; // Stop retrying
+export let connection: Redis | null = null;
+export let transcodeQueue: Queue | null = null;
+export let cleanupQueue: Queue | null = null;
+
+if (QUEUE_ENABLED) {
+  log.info('Queue enabled, initializing Redis connection...');
+  connection = new Redis(REDIS_URL, {
+    maxRetriesPerRequest: null,
+    retryStrategy(times) {
+      if (times > 3) {
+        log.warn('Redis connection failed permanently. Queue features disabled.');
+        return null;
+      }
+      return 1000;
     }
-    return 1000; // wait 1s between retries
-  }
-});
+  });
 
-connection.on('error', (err: any) => {
-  // Suppress ECONNREFUSED spam if Redis is intentionaly not running
-  if (err.code !== 'ECONNREFUSED') {
-    log.error({ err }, 'Redis connection error');
-  }
-});
+  connection.on('error', (err: any) => {
+    if (err.code !== 'ECONNREFUSED') {
+      log.error({ err }, 'Redis connection error');
+    }
+  });
 
-// ── Queue Definitions ──────────────────────────────────────────────────
-export const transcodeQueue = new Queue('transcode', {
-  connection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: { count: 100 },
-    removeOnFail: { count: 50 },
-  },
-});
+  transcodeQueue = new Queue('transcode', {
+    connection,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: { count: 100 },
+      removeOnFail: { count: 50 },
+    },
+  });
 
-transcodeQueue.on('error', (err: any) => {
-  if (err.code !== 'ECONNREFUSED') log.error({ err }, 'Transcode queue error');
-});
+  transcodeQueue.on('error', (err: any) => {
+    if (err.code !== 'ECONNREFUSED') log.error({ err }, 'Transcode queue error');
+  });
 
-export const cleanupQueue = new Queue('cleanup', {
-  connection,
-});
+  cleanupQueue = new Queue('cleanup', { connection });
 
-cleanupQueue.on('error', (err: any) => {
-  if (err.code !== 'ECONNREFUSED') log.error({ err }, 'Cleanup queue error');
-});
+  cleanupQueue.on('error', (err: any) => {
+    if (err.code !== 'ECONNREFUSED') log.error({ err }, 'Cleanup queue error');
+  });
+} else {
+  log.warn('Queue is disabled. Falling back to direct processing.');
+}
 
 // ── Dynamic concurrency ────────────────────────────────────────────────
 export function getOptimalConcurrency(): number {
